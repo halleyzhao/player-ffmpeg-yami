@@ -61,14 +61,11 @@ int main(int argc, char *argv[])
     int video_stream_index = -1, audio_stream_index = -1, i;
     FILE *dump_yuv = NULL;
 
-    if (argc<2) {
-        ERROR("no input file\n");
-        return -1;
-    }
-    input_file = argv[1];
+    input_file = "http://asp.cntv.lxdns.com/asp/hls/main/0303000a/3/default/438eb7a818b246c187e72f1cd4e1bc4c/main.m3u8";
 
     // libav* init
     av_register_all();
+    avformat_network_init();
 
     // open input file
     AVFormatContext* pFormat = NULL;
