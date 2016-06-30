@@ -49,6 +49,9 @@
     } while(0)
 #endif
 
+#define READ_VIDEO_PKT_COUNT    500
+#define CHANGE_VIDEO_TRACK_AFTER_PKT_COUNT  300
+
 static char* input_file = NULL;
 
 int main(int argc, char *argv[])
@@ -114,10 +117,14 @@ int main(int argc, char *argv[])
         if (pkt.stream_index == audio_stream_index)
             audio_pkt_count++;
 
-        usleep(10000);
+        if (video_pkt_count > READ_VIDEO_PKT_COUNT)
+            break;
+        usleep(5000);
    }
 
     PRINTF("decode %s ok, video_pkt_count=%d, audio_pkt_count=%d\n", input_file, video_pkt_count, audio_pkt_count);
+
+    // todo, close pFormat
     return 0;
 }
 
