@@ -49,8 +49,8 @@
     } while(0)
 #endif
 
-#define READ_VIDEO_PKT_COUNT    50          // after # of video pkt, we quit
-#define CHANGE_VIDEO_TRACK_PKT_COUNT  20    // change video track after # of video pkt
+#define READ_VIDEO_PKT_COUNT    500          // after # of video pkt, we quit
+#define CHANGE_VIDEO_TRACK_PKT_COUNT  200    // change video track after # of video pkt
 
 int main(int argc, char *argv[])
 {
