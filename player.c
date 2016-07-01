@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
+#include <unistd.h>
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(55, 28, 1)
@@ -44,32 +45,24 @@
 #define ASSERT(expr) do {                                                                                               \
         if (!(expr))                                                                                                    \
             ERROR();                                                                                                    \
-        assert(expr);                                                                                                   \
+        assert( 0 && expr);                                                                                             \
     } while(0)
 #endif
 
-static char* input_file = NULL;
+#define READ_VIDEO_PKT_COUNT    500          // after # of video pkt, we quit
+#define CHANGE_VIDEO_TRACK_PKT_COUNT  200    // change video track after # of video pkt
 
 int main(int argc, char *argv[])
 {
-    AVCodecContext* video_dec_ctx = NULL;
-    AVCodec* video_dec = NULL;
     AVPacket pkt;
-    AVFrame *frame = NULL;
-    int read_eos = 0;
-    int decode_count = 0;
-    int render_count = 0;
-    int video_stream_index = -1, i;
-    FILE *dump_yuv = NULL;
-
-    if (argc<2) {
-        ERROR("no input file\n");
-        return -1;
-    }
-    input_file = argv[1];
+    int video_pkt_count = 0, audio_pkt_count = 0;
+    int video_stream_index = -1, audio_stream_index = -1, i;    // stream_index in AVFormatContext
+    int video_track_index = -1, audio_track_index = -1;         // track index of each (audio/video) content
+    const char* input_file = "http://asp.cntv.lxdns.com/asp/hls/main/0303000a/3/default/438eb7a818b246c187e72f1cd4e1bc4c/main.m3u8";
 
     // libav* init
     av_register_all();
+    avformat_network_init();
 
     // open input file
     AVFormatContext* pFormat = NULL;
@@ -83,76 +76,73 @@ int main(int argc, char *argv[])
     }
     av_dump_format(pFormat,0,input_file,0);
 
-    // find out video stream
+    // gather track info of each stream (audio/video)
+    #define MAX_TRACK_COUNT     10
+    uint32_t video_tracks[MAX_TRACK_COUNT], video_track_count = 0;
+    uint32_t audio_tracks[MAX_TRACK_COUNT], audio_track_count = 0;
     for (i = 0; i < pFormat->nb_streams; i++) {
         if (pFormat->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
-            video_dec_ctx = pFormat->streams[i]->codec;
-            video_stream_index = i;
-            break;
+            video_tracks[video_track_count++] = i;
+        } else if (pFormat->streams[i]->codec->codec_type == AVMEDIA_TYPE_AUDIO) {
+            audio_tracks[audio_track_count++] = i;
         }
-    }
-    ASSERT(video_dec_ctx && video_stream_index>=0);
-
-    // open video codec
-    video_dec = avcodec_find_decoder(video_dec_ctx->codec_id);
-    if (avcodec_open2(video_dec_ctx, video_dec, NULL) < 0) {
-        ERROR("fail to open codec\n");
-        return -1;
+        pFormat->streams[i]->discard = AVDISCARD_ALL;
     }
 
-    // decode frames one by one
+    if (video_track_count) {
+        video_track_index = 0;
+        video_stream_index = video_tracks[video_track_index];
+        pFormat->streams[video_stream_index]->discard = AVDISCARD_DEFAULT;
+    }
+    if (audio_track_count) {
+        audio_track_index = 0;
+        audio_stream_index = audio_tracks[audio_track_index];
+        pFormat->streams[audio_stream_index]->discard = AVDISCARD_DEFAULT;
+    }
+
+    // dump stream discard flag
+    for (i = 0; i < pFormat->nb_streams; i++)
+        DEBUG("## stream index: %d, discard: %d\n", i, pFormat->streams[i]->discard);
+
+    // read frames one by one
     av_init_packet(&pkt);
     while (1) {
-        if(read_eos == 0 && av_read_frame(pFormat, &pkt) < 0) {
-            read_eos = 1;
-        }
-        if (read_eos) {
-            pkt.data = NULL;
-            pkt.size = 0;
-        }
+        if(av_read_frame(pFormat, &pkt) < 0)
+            break;
+        DEBUG("got pkt with stream_index: %d\n", pkt.stream_index);
 
         if (pkt.stream_index == video_stream_index) {
-            frame = av_frame_alloc();
-            int got_picture = 0,ret = 0;
-            ret = avcodec_decode_video2(video_dec_ctx, frame, &got_picture, &pkt);
-            if (ret < 0) { // decode fail (or decode finished)
-                DEBUG("exit ...\n");
-                break;
-            }
+            video_pkt_count++;
 
-            if (read_eos && ret>=0 && !got_picture) {
-                DEBUG("ret=%d, exit ...\n", ret);
-                break; // eos has been processed
-            }
+            // switch video track
+            if (video_pkt_count && video_pkt_count % CHANGE_VIDEO_TRACK_PKT_COUNT == 0) {
+                int old_stream_index = video_stream_index;
+                pFormat->streams[video_stream_index]->discard = AVDISCARD_ALL;
+                if (++video_track_index == video_track_count)
+                    video_track_index = 0;
+                video_stream_index = video_tracks[video_track_index];
+                pFormat->streams[video_stream_index]->discard = AVDISCARD_DEFAULT;
+                DEBUG("################## switch video index from %d to %d; video_track_index: %d\n",
+                        old_stream_index, video_stream_index, video_track_index);
 
-            decode_count++;
-            if (got_picture) {
-                // assumed I420 format
-                int height[3] = {video_dec_ctx->height, video_dec_ctx->height/2, video_dec_ctx->height/2};
-                int width[3] = {video_dec_ctx->width, video_dec_ctx->width/2, video_dec_ctx->width/2};
-                int plane, row;
-
-                if (!dump_yuv) {
-                    char out_file[256];
-                    sprintf(out_file, "./dump_%dx%d.I420", video_dec_ctx->width, video_dec_ctx->height);
-                    dump_yuv = fopen(out_file, "ab");
-                    if (!dump_yuv) {
-                        ERROR("fail to create file for dumped yuv data\n");
-                        return -1;
-                    }
-                    for (plane=0; plane<3; plane++) {
-                        for (row = 0; row<height[plane]; row++)
-                            fwrite(frame->data[plane]+ row*frame->linesize[plane], width[plane], 1, dump_yuv);
-                    }
-                }
-                render_count++;
-                av_frame_free(&frame);
+                // dump stream discard flag
+                for (i = 0; i < pFormat->nb_streams; i++)
+                    DEBUG("## stream index: %d, discard: %d\n", i, pFormat->streams[i]->discard);
             }
         }
-    }
-    if (dump_yuv)
-        fclose(dump_yuv);
-    PRINTF("decode %s ok, decode_count=%d, render_count=%d\n", input_file, decode_count, render_count);
+
+        if (pkt.stream_index == audio_stream_index)
+            audio_pkt_count++;
+
+        if (video_pkt_count > READ_VIDEO_PKT_COUNT)
+            break;
+       usleep(5000);
+   }
+
+    PRINTF("decode %s ok, video_pkt_count=%d, audio_pkt_count=%d\n", input_file, video_pkt_count, audio_pkt_count);
+
+    avformat_close_input(&pFormat);
+    // todo, close pFormat
     return 0;
 }
 
