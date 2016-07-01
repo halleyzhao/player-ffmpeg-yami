@@ -45,24 +45,20 @@
 #define ASSERT(expr) do {                                                                                               \
         if (!(expr))                                                                                                    \
             ERROR();                                                                                                    \
-        assert(expr);                                                                                                   \
+        assert( 0 && expr);                                                                                             \
     } while(0)
 #endif
 
-#define READ_VIDEO_PKT_COUNT    50
-#define CHANGE_VIDEO_TRACK_AFTER_PKT_COUNT  20
-
-static char* input_file = NULL;
+#define READ_VIDEO_PKT_COUNT    50          // after # of video pkt, we quit
+#define CHANGE_VIDEO_TRACK_PKT_COUNT  20    // change video track after # of video pkt
 
 int main(int argc, char *argv[])
 {
     AVPacket pkt;
     int video_pkt_count = 0, audio_pkt_count = 0;
-    int video_stream_index = -1, audio_stream_index = -1, i;
-    int video_track_index = -1, audio_track_index = -1;
-    FILE *dump_yuv = NULL;
-
-    input_file = "http://asp.cntv.lxdns.com/asp/hls/main/0303000a/3/default/438eb7a818b246c187e72f1cd4e1bc4c/main.m3u8";
+    int video_stream_index = -1, audio_stream_index = -1, i;    // stream_index in AVFormatContext
+    int video_track_index = -1, audio_track_index = -1;         // track index of each (audio/video) content
+    const char* input_file = "http://asp.cntv.lxdns.com/asp/hls/main/0303000a/3/default/438eb7a818b246c187e72f1cd4e1bc4c/main.m3u8";
 
     // libav* init
     av_register_all();
@@ -80,7 +76,7 @@ int main(int argc, char *argv[])
     }
     av_dump_format(pFormat,0,input_file,0);
 
-    // find out video stream
+    // gather track info of each stream (audio/video)
     #define MAX_TRACK_COUNT     10
     uint32_t video_tracks[MAX_TRACK_COUNT], video_track_count = 0;
     uint32_t audio_tracks[MAX_TRACK_COUNT], audio_track_count = 0;
@@ -106,7 +102,7 @@ int main(int argc, char *argv[])
 
     // dump stream discard flag
     for (i = 0; i < pFormat->nb_streams; i++)
-        DEBUG("stream index: %d, discard: %d\n", i, pFormat->streams[i]->discard = AVDISCARD_ALL);
+        DEBUG("## stream index: %d, discard: %d\n", i, pFormat->streams[i]->discard);
 
     // read frames one by one
     av_init_packet(&pkt);
@@ -119,7 +115,7 @@ int main(int argc, char *argv[])
             video_pkt_count++;
 
             // switch video track
-            if (video_pkt_count && video_pkt_count % CHANGE_VIDEO_TRACK_AFTER_PKT_COUNT == 0) {
+            if (video_pkt_count && video_pkt_count % CHANGE_VIDEO_TRACK_PKT_COUNT == 0) {
                 int old_stream_index = video_stream_index;
                 pFormat->streams[video_stream_index]->discard = AVDISCARD_ALL;
                 if (++video_track_index == video_track_count) 
@@ -131,7 +127,7 @@ int main(int argc, char *argv[])
 
                 // dump stream discard flag
                 for (i = 0; i < pFormat->nb_streams; i++)
-                    DEBUG("stream index: %d, discard: %d\n", i, pFormat->streams[i]->discard = AVDISCARD_ALL);
+                    DEBUG("## stream index: %d, discard: %d\n", i, pFormat->streams[i]->discard);
             }
         }
 
@@ -145,6 +141,7 @@ int main(int argc, char *argv[])
 
     PRINTF("decode %s ok, video_pkt_count=%d, audio_pkt_count=%d\n", input_file, video_pkt_count, audio_pkt_count);
 
+    avformat_close_input(&pFormat);
     // todo, close pFormat
     return 0;
 }
