@@ -104,17 +104,20 @@ int main(int argc, char *argv[])
         pFormat->streams[audio_stream_index]->discard = AVDISCARD_DEFAULT;
     }
 
+    // dump stream discard flag
+    for (i = 0; i < pFormat->nb_streams; i++)
+        DEBUG("stream index: %d, discard: %d\n", i, pFormat->streams[i]->discard = AVDISCARD_ALL);
+
     // read frames one by one
     av_init_packet(&pkt);
     while (1) {
-        if(av_read_frame(pFormat, &pkt) < 0) {
+        if(av_read_frame(pFormat, &pkt) < 0)
             break;
-        }
-
         DEBUG("got pkt with stream_index: %d\n", pkt.stream_index);
 
         if (pkt.stream_index == video_stream_index) {
             video_pkt_count++;
+
             // switch video track
             if (video_pkt_count && video_pkt_count % CHANGE_VIDEO_TRACK_AFTER_PKT_COUNT == 0) {
                 int old_stream_index = video_stream_index;
@@ -123,7 +126,12 @@ int main(int argc, char *argv[])
                     video_track_index = 0;
                 video_stream_index = video_tracks[video_track_index];
                 pFormat->streams[video_stream_index]->discard = AVDISCARD_DEFAULT;
-                DEBUG("################## switch video index from %d to %d; video_track_index: %d\n", old_stream_index, video_stream_index, video_track_index);
+                DEBUG("################## switch video index from %d to %d; video_track_index: %d\n",
+                        old_stream_index, video_stream_index, video_track_index);
+
+                // dump stream discard flag
+                for (i = 0; i < pFormat->nb_streams; i++)
+                    DEBUG("stream index: %d, discard: %d\n", i, pFormat->streams[i]->discard = AVDISCARD_ALL);
             }
         }
 
