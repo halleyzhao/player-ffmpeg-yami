@@ -49,8 +49,8 @@
     } while(0)
 #endif
 
-#define READ_VIDEO_PKT_COUNT    500
-#define CHANGE_VIDEO_TRACK_AFTER_PKT_COUNT  300
+#define READ_VIDEO_PKT_COUNT    50
+#define CHANGE_VIDEO_TRACK_AFTER_PKT_COUNT  20
 
 static char* input_file = NULL;
 
@@ -59,6 +59,7 @@ int main(int argc, char *argv[])
     AVPacket pkt;
     int video_pkt_count = 0, audio_pkt_count = 0;
     int video_stream_index = -1, audio_stream_index = -1, i;
+    int video_track_index = -1, audio_track_index = -1;
     FILE *dump_yuv = NULL;
 
     input_file = "http://asp.cntv.lxdns.com/asp/hls/main/0303000a/3/default/438eb7a818b246c187e72f1cd4e1bc4c/main.m3u8";
@@ -93,11 +94,13 @@ int main(int argc, char *argv[])
     }
 
     if (video_track_count) {
-        video_stream_index = video_tracks[0];
+        video_track_index = 0;
+        video_stream_index = video_tracks[video_track_index];
         pFormat->streams[video_stream_index]->discard = AVDISCARD_DEFAULT;
     }
     if (audio_track_count) {
-        audio_stream_index = audio_tracks[0];
+        audio_track_index = 0;
+        audio_stream_index = audio_tracks[audio_track_index];
         pFormat->streams[audio_stream_index]->discard = AVDISCARD_DEFAULT;
     }
 
@@ -108,15 +111,28 @@ int main(int argc, char *argv[])
             break;
         }
 
-        if (pkt.stream_index == video_stream_index)
+        DEBUG("got pkt with stream_index: %d\n", pkt.stream_index);
+
+        if (pkt.stream_index == video_stream_index) {
             video_pkt_count++;
+            // switch video track
+            if (video_pkt_count && video_pkt_count % CHANGE_VIDEO_TRACK_AFTER_PKT_COUNT == 0) {
+                int old_stream_index = video_stream_index;
+                pFormat->streams[video_stream_index]->discard = AVDISCARD_ALL;
+                if (++video_track_index == video_track_count) 
+                    video_track_index = 0;
+                video_stream_index = video_tracks[video_track_index];
+                pFormat->streams[video_stream_index]->discard = AVDISCARD_DEFAULT;
+                DEBUG("################## switch video index from %d to %d; video_track_index: %d\n", old_stream_index, video_stream_index, video_track_index);
+            }
+        }
 
         if (pkt.stream_index == audio_stream_index)
             audio_pkt_count++;
 
         if (video_pkt_count > READ_VIDEO_PKT_COUNT)
             break;
-        usleep(5000);
+       usleep(5000);
    }
 
     PRINTF("decode %s ok, video_pkt_count=%d, audio_pkt_count=%d\n", input_file, video_pkt_count, audio_pkt_count);
