@@ -54,6 +54,10 @@
 
 int main(int argc, char *argv[])
 {
+    AVCodecContext* video_dec_ctx = NULL;
+    AVCodec* video_dec = NULL;
+    AVCodecContext* audio_dec_ctx = NULL;
+    AVCodec* audio_dec = NULL;
     AVPacket pkt;
     int video_pkt_count = 0, audio_pkt_count = 0;
     int video_stream_index = -1, audio_stream_index = -1, i;    // stream_index in AVFormatContext
@@ -93,11 +97,25 @@ int main(int argc, char *argv[])
         video_track_index = 0;
         video_stream_index = video_tracks[video_track_index];
         pFormat->streams[video_stream_index]->discard = AVDISCARD_DEFAULT;
+        video_dec_ctx = pFormat->streams[video_stream_index]->codec;
     }
     if (audio_track_count) {
         audio_track_index = 0;
         audio_stream_index = audio_tracks[audio_track_index];
         pFormat->streams[audio_stream_index]->discard = AVDISCARD_DEFAULT;
+        audio_dec_ctx = pFormat->streams[audio_stream_index]->codec;
+    }
+
+    video_dec = avcodec_find_decoder(video_dec_ctx->codec_id);
+    if (avcodec_open2(video_dec_ctx, video_dec, NULL) < 0) {
+        ERROR("fail to open codec\n");
+        return -1;
+    }
+
+    audio_dec = avcodec_find_decoder(audio_dec_ctx->codec_id);
+    if (avcodec_open2(audio_dec_ctx, audio_dec, NULL) < 0) {
+        ERROR("fail to open codec\n");
+        return -1;
     }
 
     // dump stream discard flag
@@ -141,6 +159,10 @@ int main(int argc, char *argv[])
 
     PRINTF("decode %s ok, video_pkt_count=%d, audio_pkt_count=%d\n", input_file, video_pkt_count, audio_pkt_count);
 
+    if (video_dec)
+        avcodec_close(video_dec_ctx);
+    if (audio_dec)
+        avcodec_close(audio_dec_ctx);
     avformat_close_input(&pFormat);
     // todo, close pFormat
     return 0;
