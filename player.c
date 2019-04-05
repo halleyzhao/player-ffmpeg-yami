@@ -61,7 +61,9 @@ int main(int argc, char *argv[])
     int render_count = 0;
     int video_stream_index = -1, i;
     FILE *dump_yuv = NULL;
+    FILE *dump_h264 = NULL;
 
+    dump_h264 = fopen("h264_frame", "wb");
     if (argc<2) {
         ERROR("no input file\n");
         return -1;
@@ -125,6 +127,17 @@ int main(int argc, char *argv[])
                 break; // eos has been processed
             }
 
+            if (dump_h264 && pkt.data) {
+                struct {
+                    int frame_num;
+                    uint32_t frame_size;
+                } frame_info;
+                frame_info.frame_num = decode_count;
+                frame_info.frame_size = pkt.size;
+                fwrite(&frame_info, sizeof(frame_info), 1, dump_h264);
+                fwrite(pkt.data, pkt.size, 1, dump_h264);
+                DEBUG("decode_count: %d, pkt.size: %d\n", decode_count, pkt.size);
+            }
             decode_count++;
             if (got_picture) {
                 // assumed I420 format
@@ -153,6 +166,9 @@ int main(int argc, char *argv[])
     }
     if (dump_yuv)
         fclose(dump_yuv);
+    if (dump_h264)
+        fclose(dump_h264);
+
     PRINTF("decode %s ok, decode_count=%d, render_count=%d\n", input_file, decode_count, render_count);
     return 0;
 }
