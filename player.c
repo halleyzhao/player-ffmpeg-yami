@@ -111,7 +111,7 @@ int main(int argc, char *argv[])
             pkt.size = 0;
         }
 
-        if (pkt.stream_index == video_stream_index) {
+        if (pkt.stream_index == video_stream_index || read_eos) {
             frame = av_frame_alloc();
             int got_picture = 0,ret = 0;
             ret = avcodec_decode_video2(video_dec_ctx, frame, &got_picture, &pkt);
@@ -148,6 +148,7 @@ int main(int argc, char *argv[])
                 render_count++;
                 av_frame_free(&frame);
             }
+            DEBUG("decode_count: %d, render_count: %d\n", decode_count, render_count);
         }
     }
     if (dump_yuv)
